@@ -1,0 +1,25 @@
+global:
+  enabled: true
+  tlsDisable: true
+
+server:
+  enabled: true
+
+  dev:
+    enabled: true
+    devRootToken: "root"
+
+  service:
+    enabled: true
+    type: ClusterIP
+
+  dataStorage:
+    enabled: false
+
+injector:
+  enabled: true
+
+ui:
+  enabled: true
+  serviceType: "ClusterIP"
+  externalPort: 8200
