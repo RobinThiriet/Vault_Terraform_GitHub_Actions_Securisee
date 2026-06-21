@@ -6,20 +6,50 @@ server:
   enabled: true
 
   dev:
-    enabled: true
-    devRootToken: "root"
+    enabled: false
 
-  service:
+  standalone:
+    enabled: false
+
+  ha:
     enabled: true
-    type: ClusterIP
+    replicas: 1
+
+    raft:
+      enabled: true
+      setNodeId: true
+
+      config: |
+        ui = true
+
+        listener "tcp" {
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_disable = 1
+        }
+
+        storage "raft" {
+          path = "/vault/data"
+        }
+
+        service_registration "kubernetes" {}
 
   dataStorage:
-    enabled: false
+    enabled: true
+    size: 5Gi
+    mountPath: "/vault/data"
+    accessMode: ReadWriteOnce
+
+  auditStorage:
+    enabled: true
+    size: 1Gi
+    mountPath: "/vault/audit"
+    accessMode: ReadWriteOnce
 
 injector:
   enabled: true
 
 ui:
   enabled: true
-  serviceType: "ClusterIP"
+  serviceType: ClusterIP
   externalPort: 8200
