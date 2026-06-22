@@ -1,0 +1,41 @@
+expose:
+  type: nodePort
+
+  tls:
+    enabled: false
+
+  nodePort:
+    name: harbor
+    ports:
+      http:
+        port: 80
+        nodePort: 30002
+      https:
+        port: 443
+        nodePort: 30003
+
+externalURL: http://harbor.local:30002
+
+harborAdminPassword: "Harbor12345"
+
+persistence:
+  enabled: true
+
+  persistentVolumeClaim:
+    registry:
+      size: 10Gi
+    jobservice:
+      jobLog:
+        size: 1Gi
+    database:
+      size: 2Gi
+    redis:
+      size: 1Gi
+    trivy:
+      size: 5Gi
+
+trivy:
+  enabled: true
+
+notary:
+  enabled: false
