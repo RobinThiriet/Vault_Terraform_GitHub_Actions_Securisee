@@ -1,0 +1,30 @@
+image:
+  registry: harbor.local:30002
+  repository: harbor/grafana
+  tag: latest
+  pullPolicy: Always
+  pullSecrets:
+    - harbor-regcred
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3000
+
+adminUser: admin
+adminPassword: "Azerty77"
+
+persistence:
+  enabled: true
+  type: pvc
+  size: 2Gi
+  accessModes:
+    - ReadWriteOnce
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
