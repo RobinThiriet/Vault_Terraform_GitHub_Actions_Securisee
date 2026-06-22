@@ -11,7 +11,8 @@ permissions:
 
 env:
   TF_DIR: terraform
-  IMAGE_TO_SCAN: grafana/grafana:latest
+  IMAGE_TO_SCAN01: grafana/grafana:latest
+  IMAGE_TO_SCAN02: hashicorp/vault-k8s:1.7.4
 
 jobs:
   terraform:
@@ -137,7 +138,8 @@ jobs:
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_TO_SCAN }}
+          image-ref-1: ${{ env.IMAGE_TO_SCAN }}
+          image-ref-2: ${{ env.IMAGE_TO_SCAN02 }}
           format: table
           exit-code: "1"
           ignore-unfixed: true
