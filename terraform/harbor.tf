@@ -1,9 +1,3 @@
-resource "kubernetes_namespace_v1" "harbor" {
-  metadata {
-    name = "harbor"
-  }
-}
-
 resource "helm_release" "harbor" {
   name      = "harbor"
   namespace = "harbor"
