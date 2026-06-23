@@ -12,6 +12,9 @@ resource "helm_release" "awx" {
   chart      = "awx-operator"
   version    = var.awx_operator_chart_version
 
+  values = [
+    file("${path.module}/awx-values.yaml")
+  ]
   wait    = true
-  timeout = 600
+  timeout = 900
 }
