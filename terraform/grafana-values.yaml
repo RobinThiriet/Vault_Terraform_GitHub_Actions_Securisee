@@ -21,6 +21,17 @@ persistence:
   accessModes:
     - ReadWriteOnce
 
+initChownData:
+  enabled: false
+
+securityContext:
+  runAsUser: 472
+  runAsGroup: 472
+  fsGroup: 472
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+
 resources:
   requests:
     cpu: 100m
@@ -28,3 +39,23 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
+
+podAnnotations:
+  vault.hashicorp.com/agent-inject: "true"
+  vault.hashicorp.com/role: "grafana"
+
+  vault.hashicorp.com/agent-inject-secret-admin_user: "secret/data/grafana/config"
+  vault.hashicorp.com/agent-inject-template-admin_user: |
+    {{- with secret "secret/data/grafana/config" -}}
+    {{ .Data.data.username }}
+    {{- end }}
+
+  vault.hashicorp.com/agent-inject-secret-admin_password: "secret/data/grafana/config"
+  vault.hashicorp.com/agent-inject-template-admin_password: |
+    {{- with secret "secret/data/grafana/config" -}}
+    {{ .Data.data.password }}
+    {{- end }}
+
+env:
+  GF_SECURITY_ADMIN_USER__FILE: /vault/secrets/admin_user
+  GF_SECURITY_ADMIN_PASSWORD__FILE: /vault/secrets/admin_password
