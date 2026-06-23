@@ -138,7 +138,7 @@ jobs:
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref-1: ${{ env.IMAGE_TO_SCAN }}
+          image-ref-1: ${{ env.IMAGE_TO_SCAN01 }}
           image-ref-2: ${{ env.IMAGE_TO_SCAN02 }}
           format: table
           exit-code: "1"
