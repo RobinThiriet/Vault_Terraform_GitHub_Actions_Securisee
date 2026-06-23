@@ -1,0 +1,7 @@
+AWX:
+  enabled: true
+  name: awx
+
+  spec:
+    service_type: nodeport
+    ingress_type: none
