@@ -55,7 +55,3 @@ podAnnotations:
     {{- with secret "secret/data/grafana/config" -}}
     {{ .Data.data.password }}
     {{- end }}
-
-env:
-  GF_SECURITY_ADMIN_USER__FILE: /vault/secrets/admin_user
-  GF_SECURITY_ADMIN_PASSWORD__FILE: /vault/secrets/admin_password
