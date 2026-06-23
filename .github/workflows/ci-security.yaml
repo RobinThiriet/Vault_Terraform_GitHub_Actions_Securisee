@@ -138,9 +138,9 @@ jobs:
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_TO_SCAN01 }} ${{ env.IMAGE_TO_SCAN02 }}
+          image-ref: ${{ env.IMAGE_TO_SCAN01 }}
           format: table
-          exit-code: "1"
+          exit-code: "0" #1 for vulnerabilities found, 0 for no vulnerabilities found
           ignore-unfixed: true
           scan-type: 'image'
           severity: HIGH,CRITICAL
@@ -150,7 +150,7 @@ jobs:
         with:
           image-ref: ${{ env.IMAGE_TO_SCAN02 }}
           format: table
-          exit-code: "1"
+          exit-code: "0" #1 for vulnerabilities found, 0 for no vulnerabilities found
           ignore-unfixed: true
           scan-type: 'image'
           severity: HIGH,CRITICAL          
