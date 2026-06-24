@@ -1,0 +1,12 @@
+extraScrapeConfigs: |
+  - job_name: vault
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: /v1/sys/metrics
+    params:
+      format:
+        - prometheus
+    scheme: http
+    static_configs:
+      - targets:
+          - vault.vault.svc.cluster.local:8200
