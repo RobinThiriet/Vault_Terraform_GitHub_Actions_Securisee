@@ -1,1 +1,6 @@
 *.tfstate.*
+ZAP_baseline/zap-reports/
+zap-reports/
+*.html
+*.json
+*.md
