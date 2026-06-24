@@ -5,3 +5,6 @@ zap-reports/
 *.json
 *.md
 cosign/*.key
+!README.md
+!docs/
+!docs/**/*.md
