@@ -4,3 +4,4 @@ zap-reports/
 *.html
 *.json
 *.md
+cosign/*.key
