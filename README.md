@@ -184,6 +184,24 @@ La documentation ci-dessous suit le cadrage du lab, mais les sections "etat reel
 - partiellement present
 - encore attendu pour une couverture complete du TP
 
+## Resultat attendu du lab
+
+Le support `.docx` formalise le resultat final vise de la facon suivante :
+
+- Vault est deploye sur Kubernetes avec Terraform et Helm
+- Vault utilise un stockage persistant avec Raft
+- Vault KV stocke les secrets applicatifs
+- Kubernetes Auth permet aux Pods de s'authentifier aupres de Vault
+- Vault Agent Injector injecte les secrets dans les Pods
+- WordPress utilise des credentials MariaDB injectes depuis Vault
+- MariaDB est initialisee avec des credentials issus de Vault
+- Prometheus scrape les metriques Vault
+- Harbor stocke une image privee
+- Cosign signe une image par digest dans Harbor
+- AWX est disponible comme plateforme Ansible
+- ZAP baseline produit des rapports DAST
+- la pipeline GitHub Actions couvre IaC, SAST, CVE, DAST et signature
+
 ## Parcours du lab
 
 Le support de lab decoupe le projet en 4 etapes principales.
@@ -262,6 +280,14 @@ Le depot montre une installation Vault via Helm avec :
 - interface `UI` activee
 - telemetrie Prometheus exposee
 - mode `HA` active avec `1` replica dans le contexte du lab local
+
+Le support rappelle aussi un point d'exploitation important : Vault utilise le mecanisme `Shamir seal`.
+En pratique :
+
+- les `unseal keys` servent a deverrouiller Vault apres redemarrage
+- le `root token` sert a l'administration Vault
+
+Dans un environnement reel, cette etape manuelle devrait etre remplacee par un mecanisme d'`auto-unseal`.
 
 Fichiers :
 
@@ -392,6 +418,12 @@ Le lab s'appuie sur deux roles Vault distincts :
 
 Ils sont relies aux `ServiceAccount` Kubernetes du namespace `wordpress` afin de limiter les acces au strict necessaire.
 
+Le support mentionne aussi un second chemin possible pour les informations d'administration WordPress :
+
+- `secret/wordpress/admin`
+
+Dans cette implementation, ce secret sert de stockage securise pour les credentials humains et n'est pas consomme automatiquement par WordPress.
+
 ## Pipeline GitHub Actions
 
 Le workflow [`.github/workflows/ci-security.yaml`](/root/01_Vault/.github/workflows/ci-security.yaml) couvre actuellement :
@@ -414,6 +446,8 @@ La cible pedagogique du lab est une pipeline DevSecOps avec :
 - `CVE scan`
 - `DAST`
 - `image signing`
+
+Le support insiste sur une philosophie importante : faire echouer la CI quand un controle critique echoue, tout en conservant les rapports de scan pour analyse.
 
 ### Ce qui manque encore pour une couverture totale
 
@@ -458,6 +492,13 @@ kubectl exec -n wordpress "$DB_POD" -c mariadb -- sh -c '
 '
 ```
 
+Resultat attendu :
+
+```text
+DATABASE()
+db_wordpress
+```
+
 ### Verifier les tables WordPress
 
 ```bash
@@ -470,6 +511,23 @@ kubectl exec -n wordpress "$DB_POD" -c mariadb -- sh -c '
     -e "SHOW TABLES;"
 '
 ```
+
+La presence des tables `wp_*` confirme que WordPress a correctement initialise la base.
+
+### Verifier l'utilisateur WordPress
+
+```bash
+kubectl exec -n wordpress "$DB_POD" -c mariadb -- sh -c '
+  . /vault/secrets/db.env
+  mariadb -h 127.0.0.1 \
+    -u"$MARIADB_USER" \
+    -p"$MARIADB_PASSWORD" \
+    "$MARIADB_DATABASE" \
+    -e "SELECT ID, user_login, user_email FROM wp_users;"
+'
+```
+
+Cette verification permet de confirmer que les donnees applicatives WordPress ont bien ete ecrites dans MariaDB.
 
 ### Verifier les metriques Vault
 
@@ -566,6 +624,12 @@ Le PDF insiste sur plusieurs bonnes pratiques. Elles sont pertinentes pour ce de
 - cles privees Cosign
 - fichiers `.env`
 - rapports contenant des donnees sensibles
+
+Commande utile de verification avant commit, reprise du support :
+
+```bash
+git grep -n "hvs\\.\\|Azerty77\\|root_token\\|unseal"
+```
 
 ### Etat sensible observe dans le depot
 
