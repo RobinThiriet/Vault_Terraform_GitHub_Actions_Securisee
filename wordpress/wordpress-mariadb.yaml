@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: wordpress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wordpress-db
+  namespace: wordpress
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wordpress-app
+  namespace: wordpress
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress-mariadb
+  namespace: wordpress
+spec:
+  selector:
+    app: wordpress-mariadb
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wordpress-mariadb-data
+  namespace: wordpress
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress-mariadb
+  namespace: wordpress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wordpress-mariadb
+  template:
+    metadata:
+      labels:
+        app: wordpress-mariadb
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/role: "wordpress-db"
+        vault.hashicorp.com/agent-inject-secret-db.env: "secret/data/wordpress/db"
+        vault.hashicorp.com/agent-inject-template-db.env: |
+          {{- with secret "secret/data/wordpress/db" -}}
+          export MARIADB_ROOT_PASSWORD="{{ .Data.data.root_password }}"
+          export MARIADB_DATABASE="{{ .Data.data.database }}"
+          export MARIADB_USER="{{ .Data.data.username }}"
+          export MARIADB_PASSWORD="{{ .Data.data.password }}"
+          {{- end }}
+    spec:
+      serviceAccountName: wordpress-db
+      containers:
+        - name: mariadb
+          image: mariadb:11.4
+          ports:
+            - containerPort: 3306
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              echo "[mariadb] Loading credentials injected by Vault..."
+              . /vault/secrets/db.env
+
+              echo "[mariadb] Starting MariaDB..."
+              exec /usr/local/bin/docker-entrypoint.sh mariadbd
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: wordpress-mariadb-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress
+  namespace: wordpress
+spec:
+  selector:
+    app: wordpress
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  namespace: wordpress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/role: "wordpress-app"
+        vault.hashicorp.com/agent-inject-secret-wp.env: "secret/data/wordpress/db"
+        vault.hashicorp.com/agent-inject-template-wp.env: |
+          {{- with secret "secret/data/wordpress/db" -}}
+          export WORDPRESS_DB_HOST="{{ .Data.data.host }}:{{ .Data.data.port }}"
+          export WORDPRESS_DB_NAME="{{ .Data.data.database }}"
+          export WORDPRESS_DB_USER="{{ .Data.data.username }}"
+          export WORDPRESS_DB_PASSWORD="{{ .Data.data.password }}"
+          {{- end }}
+    spec:
+      serviceAccountName: wordpress-app
+      containers:
+        - name: wordpress
+          image: wordpress:apache
+          ports:
+            - containerPort: 80
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              echo "[wordpress] Loading credentials injected by Vault..."
+              . /vault/secrets/wp.env
+
+              echo "[wordpress] Starting WordPress..."
+              exec /usr/local/bin/docker-entrypoint.sh apache2-foreground
