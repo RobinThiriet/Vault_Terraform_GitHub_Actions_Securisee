@@ -14,9 +14,9 @@ env:
   IMAGE_TO_SCAN01: grafana/grafana:latest
   IMAGE_TO_SCAN02: hashicorp/vault-k8s:1.7.4
   IMAGE_TO_SCAN03: quay.io/ansible/awx:24.6.1
-  IMAGE_TO_SCAN05: quay.io/sclorg/postgresql-15-c9s:latest
-  IMAGE_TO_SCAN06: quay.io/ansible/awx-operator:2.19.1
-  IMAGE_TO_SCAN08: quay.io/brancz/kube-rbac-proxy:v0.15.0
+  IMAGE_TO_SCAN04: quay.io/sclorg/postgresql-15-c9s:latest
+  IMAGE_TO_SCAN05: quay.io/ansible/awx-operator:2.19.1
+  IMAGE_TO_SCAN06: quay.io/brancz/kube-rbac-proxy:v0.15.0
 
 jobs:
   terraform:
@@ -173,7 +173,7 @@ jobs:
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_TO_SCAN }}
+          image-ref: ${{ env.IMAGE_TO_SCAN04 }}
           format: table
           exit-code: "0" #1 for vulnerabilities found, 0 for no vulnerabilities found
           ignore-unfixed: true
@@ -183,7 +183,7 @@ jobs:
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_TO_SCAN06 }}
+          image-ref: ${{ env.IMAGE_TO_SCAN05 }}
           format: table
           exit-code: "0" #1 for vulnerabilities found, 0 for no vulnerabilities found
           ignore-unfixed: true
@@ -193,7 +193,7 @@ jobs:
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_TO_SCAN08 }}
+          image-ref: ${{ env.IMAGE_TO_SCAN06 }}
           format: table
           exit-code: "0" #1 for vulnerabilities found, 0 for no vulnerabilities found
           ignore-unfixed: true
