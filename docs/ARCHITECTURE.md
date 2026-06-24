@@ -1,46 +1,62 @@
-# Architecture detaillee
+# Architecture detaillee du lab
 
-Ce document decrit l'architecture du projet au niveau systeme, les dependances entre composants et le chemin suivi par les secrets depuis Vault jusqu'aux applications.
+Ce document reprend le cadrage du support "Lab DevSecOps Kubernetes" et l'aligne sur le contenu reel du depot.
 
-## 1. Vision globale
+## 1. Positionnement
 
-Le projet s'appuie sur un socle Kubernetes pilote par Terraform et securise par une chaine CI GitHub Actions.
+Le projet illustre une chaine DevSecOps Kubernetes complete autour de Vault.
+
+Le fil conducteur du lab est le suivant :
+
+- Terraform deploie l'infrastructure
+- Vault stocke les secrets
+- Kubernetes Auth permet aux Pods de s'authentifier
+- Vault Agent Injector injecte les secrets a l'execution
+- WordPress et MariaDB consomment ces secrets
+- Prometheus supervise Vault
+- Harbor stocke les images
+- Cosign signe les images
+- AWX sert de plateforme d'automatisation
+- GitHub Actions applique les controles de securite
+
+## 2. Vue systeme
 
 ```mermaid
 flowchart LR
-    subgraph SCM[Source Control]
+    subgraph SCM[Source control]
         Repo[GitHub Repository]
         Actions[GitHub Actions]
     end
 
     subgraph Provisioning[Provisionnement]
         TF[Terraform]
-        Helm[Helm Provider]
-        K8SAPI[Kubernetes API]
+        Helm[Helm provider]
+        KAPI[Kubernetes API]
     end
 
-    subgraph Cluster[Cluster Kubernetes]
-        subgraph Infra[Namespaces d'infrastructure]
-            VaultNS[vault]
-            HarborNS[harbor]
-            AwxNS[awx]
-        end
-
-        subgraph Security[Secrets]
+    subgraph Cluster[Cluster k3s / Kubernetes]
+        subgraph VaultNS[Namespace vault]
             Vault[Vault Server]
+            Raft[Raft storage]
             Injector[Vault Agent Injector]
-            Policies[Vault Policies]
         end
 
-        subgraph Platform[Services plateforme]
-            AWX[AWX Operator]
+        subgraph HarborNS[Namespace harbor]
             Harbor[Harbor Registry]
-            TrivyInHarbor[Harbor Trivy]
+        end
+
+        subgraph AwxNS[Namespace awx]
+            Op[AWX Operator]
+            Web[AWX Web]
+            Task[AWX Task]
+            Pg[AWX PostgreSQL]
+        end
+
+        subgraph MonNS[Namespace monitoring]
             Prom[Prometheus]
         end
 
-        subgraph Apps[Applications]
-            WPNamespace[wordpress]
+        subgraph WpNS[Namespace wordpress]
             WP[WordPress]
             DB[MariaDB]
         end
@@ -50,218 +66,311 @@ flowchart LR
     Repo --> TF
     Actions --> TF
     TF --> Helm
-    TF --> K8SAPI
-    Helm --> K8SAPI
-    K8SAPI --> VaultNS
-    K8SAPI --> HarborNS
-    K8SAPI --> AwxNS
+    TF --> KAPI
+    Helm --> KAPI
 
-    VaultNS --> Vault
+    KAPI --> Vault
+    KAPI --> Harbor
+    KAPI --> Op
+    KAPI --> Prom
+    KAPI --> WP
+    KAPI --> DB
+
     Vault --> Injector
-    Vault --> Policies
-    AwxNS --> AWX
-    HarborNS --> Harbor
-    Harbor --> TrivyInHarbor
-    WPNamespace --> WP
-    WPNamespace --> DB
-    Prom --> Vault
     Injector --> WP
     Injector --> DB
     WP --> DB
+    Prom --> Vault
 ```
-
-## 2. Roles des composants
-
-### Terraform
-
-Terraform est la couche declarative principale. Il :
-
-- configure les providers `kubernetes` et `helm`
-- cree des namespaces cibles
-- deploie les releases Helm de Vault, Harbor et AWX
-- centralise les valeurs de parametrage dans des fichiers YAML
-
-### Vault
-
-Vault fournit :
-
-- le stockage des secrets applicatifs
-- les policies d'autorisation
-- l'integration Kubernetes via l'Injector
-- les metriques d'exploitation exposees a Prometheus
-
-Dans ce projet, Vault est configure en mode Raft persistant, avec l'UI activee et les metriques Prometheus accessibles.
-
-### AWX
-
-AWX sert de brique d'automatisation. Son deploiement via `awx-operator` permet d'illustrer l'integration d'un composant d'orchestration dans une plateforme securisee.
-
-### Harbor
-
-Harbor apporte :
-
-- un registre prive d'images
-- la persistence des artefacts
-- un scanner Trivy integre
-
-Il couvre donc la partie supply chain et cycle de vie des images.
-
-### WordPress et MariaDB
-
-Cet ensemble sert de cas d'usage applicatif concret :
-
-- MariaDB consomme ses identifiants depuis Vault
-- WordPress consomme la configuration d'acces a la base depuis Vault
-- l'application ne porte pas ses secrets dans le manifest
-
-### Prometheus
-
-Prometheus est configure pour interroger l'endpoint metrique de Vault, ce qui permet de superviser l'etat du service de secrets.
-
-### GitHub Actions
-
-GitHub Actions forme la couche de controle de securite continue. Le pipeline effectue :
-
-- des verifications de structure Terraform
-- du lint Terraform
-- de l'analyse IaC
-- de l'analyse SAST
-- du scan d'images
 
 ## 3. Architecture des secrets
 
-Le flux de secret est l'un des points les plus importants du projet.
+La partie la plus importante du lab est la circulation du secret.
 
 ```mermaid
 sequenceDiagram
-    participant Dev as Developpeur
+    participant Admin as Admin / Operateur
     participant Vault as Vault
     participant K8S as Kubernetes
     participant SA as ServiceAccount
-    participant Inj as Vault Injector
-    participant Pod as Pod Applicatif
+    participant Auth as Kubernetes Auth
+    participant Role as Vault Role
+    participant Policy as Vault Policy
+    participant Inj as Vault Agent Injector
+    participant Pod as Pod applicatif
 
-    Dev->>Vault: Ecrit policy + role + secrets
-    Dev->>K8S: Deploie le manifest annote
-    K8S->>SA: Associe le pod a un ServiceAccount
-    K8S->>Inj: Detecte les annotations Vault
-    Inj->>Vault: Authentification Kubernetes via role
-    Vault-->>Inj: Secret autorise par la policy
-    Inj-->>Pod: Injection du fichier env dans /vault/secrets
-    Pod->>Pod: source du fichier puis demarrage applicatif
+    Admin->>Vault: Ecrit le secret dans KV
+    Admin->>Vault: Cree policy + role
+    Admin->>K8S: Deploie le Pod annote
+    K8S->>SA: Associe le ServiceAccount au Pod
+    K8S->>Inj: Mutation du Pod
+    Inj->>Auth: Authentification Kubernetes
+    Auth->>Role: Resolution du role Vault
+    Role->>Policy: Evaluation des droits
+    Policy-->>Vault: Autorisation de lecture
+    Vault-->>Inj: Retour du secret
+    Inj-->>Pod: Injection dans /vault/secrets/
+    Pod->>Pod: source le fichier puis demarre
 ```
 
-### Exemple concret WordPress
+### Sequence logique du lab
 
-Pour `wordpress-mariadb.yaml`, le mecanisme est le suivant :
+Le support de reference decrit exactement ce chemin :
 
-1. `wordpress-db` lit `secret/data/wordpress/db`.
-2. L'agent Vault genere un fichier `db.env`.
-3. Le conteneur MariaDB source ce fichier avant de lancer `mariadbd`.
-4. `wordpress-app` lit le meme secret pour construire les variables `WORDPRESS_DB_*`.
-5. Le conteneur WordPress source `wp.env` puis demarre Apache.
+1. un secret est stocke dans `Vault KV`
+2. un Pod Kubernetes est annote pour l'injection
+3. le `ServiceAccount` du Pod s'authentifie via `Kubernetes Auth`
+4. Vault applique un `role`
+5. le role applique une `policy`
+6. le secret autorise est ecrit dans `/vault/secrets/`
+7. le conteneur source le fichier puis demarre
 
-Cette approche evite de stocker les mots de passe dans les variables d'environnement Kubernetes statiques ou dans les manifests versionnes.
+## 4. Vault
 
-## 4. Flux de provisionnement
+Le deploiement Vault du lab repose sur :
+
+- chart Helm officiel HashiCorp
+- namespace dedie `vault`
+- persistance des donnees
+- backend `Raft`
+- UI activee
+- telemetrie activee
+- Agent Injector active
+- mode HA avec une seule replique dans le contexte du lab local
+
+### Pourquoi une seule replique
+
+Le support de lab est explicite sur ce point : le mode `HA` est active, mais le lab reste volontairement sur `1` replique pour rester compatible avec un cluster local mono-node.
+
+### Shamir seal
+
+Le PDF rappelle aussi un point de fonctionnement important :
+
+- `unseal keys` : servent a deverrouiller Vault apres redemarrage
+- `root token` : sert a administrer Vault
+
+En production, cette mecanique manuelle devrait etre remplacee par un `auto-unseal` via KMS ou HSM.
+
+## 5. Vault KV et Kubernetes Auth
+
+Le moteur utilise est `KV v2`.
+
+Exemple logique du lab :
+
+- chemin fonctionnel : `secret/wordpress/db`
+- chemin policy/API : `secret/data/wordpress/db`
+
+Cette distinction apparait deja dans ce depot, notamment dans :
+
+- [wordpress/policies/wordpress-policy.hcl](/root/01_Vault/wordpress/policies/wordpress-policy.hcl)
+
+Kubernetes Auth permet a un Pod d'obtenir un token Vault a partir de son `ServiceAccount`.
+
+## 6. WordPress + MariaDB
+
+Le cas d'usage principal du lab est une application reelle.
+
+### Intention
+
+Montrer que :
+
+- MariaDB peut etre initialisee avec des credentials injectes par Vault
+- WordPress peut se connecter a MariaDB sans stocker ses secrets en clair dans les manifests
+
+### Secret utilise
+
+Le PDF decrit le secret suivant :
+
+- `secret/wordpress/db`
+
+Avec des champs de type :
+
+- `username`
+- `password`
+- `database`
+- `host`
+- `port`
+- `root_password`
+
+### Mapping sur le depot
+
+Le fichier [wordpress/wordpress-mariadb.yaml](/root/01_Vault/wordpress/wordpress-mariadb.yaml) implemente bien cette logique :
+
+- `wordpress-db` consomme `/vault/secrets/db.env`
+- `wordpress-app` consomme `/vault/secrets/wp.env`
+- les deux charges sont liees a des `ServiceAccount` dedies
+
+### Roles Vault attendus
+
+Le support de lab formalise deux roles :
+
+- `wordpress-db`
+- `wordpress-app`
+
+Cette separation est saine car elle permet de limiter les permissions au besoin reel de chaque Pod.
+
+## 7. Verification de l'injection
+
+Le PDF insiste sur la verification des `initContainers`.
 
 ```mermaid
 flowchart TD
-    Start[Terraform init / plan / apply]
-    Providers[Chargement providers Kubernetes et Helm]
-    Namespaces[Creation namespaces]
-    VaultDeploy[Deploiement Helm Vault]
-    AwxDeploy[Deploiement Helm AWX]
-    HarborDeploy[Deploiement Helm Harbor]
-    VaultBootstrap[Chargement policies, roles, secrets]
-    Apps[Deploiement WordPress et MariaDB]
-    Observe[Scraping Prometheus + CI security]
-
-    Start --> Providers
-    Providers --> Namespaces
-    Namespaces --> VaultDeploy
-    VaultDeploy --> AwxDeploy
-    VaultDeploy --> HarborDeploy
-    VaultDeploy --> VaultBootstrap
-    VaultBootstrap --> Apps
-    Apps --> Observe
+    PodCreate[Creation du Pod] --> Webhook[Mutation par Vault Injector]
+    Webhook --> Init[vault-agent-init]
+    Init --> Secrets[Generation des fichiers dans /vault/secrets]
+    Secrets --> App[Demarrage du conteneur applicatif]
 ```
 
-## 5. Architecture du pipeline CI securite
+Le resultat attendu est :
+
+- `vault-agent-init`
+- puis le conteneur applicatif `wordpress` ou `mariadb`
+
+## 8. Monitoring Vault avec Prometheus
+
+Le lab rappelle un point important : Prometheus ne distribue pas les credentials.
+
+Prometheus sert a superviser Vault.
+
+### Endpoint metrique
+
+Vault expose :
+
+- `/v1/sys/metrics?format=prometheus`
+
+### Configuration visible dans le depot
+
+Le fichier [monitoring/prometheus-values.yaml](/root/01_Vault/monitoring/prometheus-values.yaml) configure bien le scraping du service :
+
+- `vault.vault.svc.cluster.local:8200`
+
+### Requetes utiles
+
+- `up{job="vault"}`
+- `vault_core_active`
+- `vault_core_unsealed`
+- `vault_autopilot_healthy`
+- `vault_expire_num_leases`
+
+## 9. Harbor et Cosign
+
+Le support de lab positionne Harbor comme registry prive local et Cosign comme mecanisme de signature par digest.
+
+Le principe cible est le suivant :
 
 ```mermaid
 flowchart LR
-    Push[Push sur main] --> TFJob[Terraform fmt/init/validate]
-    TFJob --> TFLint[TFLint]
-    TFLint --> Checkov[Checkov IaC scan]
-    Checkov --> Semgrep[Semgrep SAST]
-    Semgrep --> Trivy[Trivy image scan]
-    Checkov --> SARIF1[Upload SARIF GitHub Security]
-    Semgrep --> SARIF2[Upload SARIF GitHub Security]
+    Upstream[Image source] --> Harbor[Harbor Registry]
+    Harbor --> Digest[Digest OCI]
+    Key[Cosign private key] --> Sign[Cosign sign]
+    Digest --> Sign
+    Sign --> Sig[Signature OCI dans Harbor]
 ```
 
-### Lecture du workflow
+Le depot contient :
 
-Le pipeline ne deploie pas directement l'infrastructure. Il agit comme garde-fou de securite et de qualite.
+- la configuration Harbor
+- une cle publique Cosign
+- des traces montrant que la brique est dans le perimetre du lab
 
-Sa valeur ajoutee tient dans le fait qu'il combine :
+En revanche, l'automatisation CI complete de la signature n'est pas encore materialisee dans le workflow GitHub Actions actuel.
 
-- validation syntaxique et semantique Terraform
-- detection de mauvaises pratiques IaC
-- analyse de patterns de code dangereux
-- analyse de vulnerabilites sur des images externes consommees par la plateforme
+## 10. AWX
 
-## 6. Mapping entre fichiers et responsabilites
+Le support du lab decrit AWX comme plateforme d'automatisation Ansible.
 
-| Zone | Fichiers | Responsabilite |
+Les composants cibles sont :
+
+- `awx-operator-controller-manager`
+- `awx-web`
+- `awx-task`
+- `awx-postgres`
+
+Le depot montre le deploiement via `awx-operator`, ce qui aligne bien l'infrastructure avec l'objectif du lab.
+
+Le PDF propose ensuite deux trajectoires d'integration avec Vault :
+
+1. injection Vault dans les Pods / jobs AWX
+2. lecture dynamique de Vault depuis Ansible avec `community.hashi_vault`
+
+La seconde approche est generalement la plus propre pour les playbooks.
+
+## 11. Pipeline CI / DevSecOps
+
+Le support de lab vise une pipeline complete :
+
+- Terraform validation
+- TFLint
+- Checkov
+- Semgrep
+- Trivy
+- ZAP baseline
+- Cosign image signing
+
+### Couverture actuelle du depot
+
+Le workflow [ci-security.yaml](/root/01_Vault/.github/workflows/ci-security.yaml) couvre deja :
+
+- validation Terraform
+- TFLint
+- Checkov
+- Semgrep
+- Trivy
+
+Les briques suivantes existent dans le perimetre du projet mais ne sont pas encore totalement branchees a la CI :
+
+- `ZAP baseline`
+- `Cosign sign`
+- `push Harbor`
+
+## 12. Cartographie depot / objectifs du lab
+
+| Objectif du lab | Etat dans le depot | Reference |
 | --- | --- | --- |
-| Terraform core | `terraform/providers.tf`, `terraform/variables.tf` | connexion au cluster et parametrage |
-| Namespaces | `terraform/namespace.tf`, `terraform/awx.tf` | isolation logique des composants |
-| Vault | `terraform/vault.tf`, `terraform/value-vault.yaml` | service de secrets et injecteur |
-| AWX | `terraform/awx.tf`, `terraform/awx-values.yaml` | automatisation / operations |
-| Harbor | `terraform/harbor.tf`, `terraform/harbor-values.yaml` | registre prive d'images |
-| App demo | `wordpress/wordpress-mariadb.yaml` | preuve de fonctionnement de l'injection Vault |
-| Policies | `vault/policies/*.hcl`, `wordpress/policies/*.hcl`, `postgres/policies/*.hcl` | controle d'acces aux secrets |
-| Monitoring | `monitoring/prometheus-values.yaml` | collecte des metriques Vault |
-| Security reports | `.github/workflows/ci-security.yaml`, `ZAP_baseline/zap-reports/*` | validation continue de securite |
+| Vault via Terraform + Helm | implemente | `terraform/vault.tf`, `terraform/value-vault.yaml` |
+| Kubernetes Auth + Injector | implemente partiellement dans les manifests, bootstrap Vault a finaliser | `wordpress/wordpress-mariadb.yaml`, `wordpress/policies/*.hcl` |
+| WordPress + MariaDB securises | implemente | `wordpress/wordpress-mariadb.yaml` |
+| Prometheus sur Vault | configuration presente | `monitoring/prometheus-values.yaml` |
+| Harbor | implemente | `terraform/harbor.tf` |
+| Cosign | present mais CI inachevee | `cosign/` |
+| AWX | implemente cote deploiement | `terraform/awx.tf` |
+| ZAP baseline | rapports presents | `ZAP_baseline/zap-reports/` |
+| Pipeline CI complete | partielle | `.github/workflows/ci-security.yaml` |
 
-## 7. Hypotheses d'exploitation
+## 13. Risques et ecarts connus
 
-Le depot montre clairement une architecture de laboratoire avance ou de POC securise. Plusieurs indices vont dans ce sens :
+Pour rester fidele au repo, il faut noter les points suivants :
 
-- exposition de services en `NodePort`
-- TLS desactive pour Vault
-- replica unique pour Vault en mode Raft
-- stockage local des valeurs d'environnement et manifests de demonstration
+- Vault est sans TLS dans cette version de lab
+- Harbor est expose en `NodePort`
+- AWX est expose en `NodePort`
+- Vault tourne en `HA` logique avec `1` replique
+- un secret Harbor est stocke en clair dans les valeurs
+- la CI Trivy contient une reference de variable a verifier
 
-Cela ne retire rien a la qualite pedagogique du projet. Au contraire, l'ensemble est tres pertinent pour montrer comment articuler :
+## 14. Cible de maturite
 
-- Terraform
-- Kubernetes
-- Vault Injector
-- policies de moindre privilege
-- scans CI de securite
+Pour transformer ce lab en base quasi-production :
 
-## 8. Recommandations d'architecture
+1. ajouter TLS partout
+2. separer strictement les policies Vault
+3. industrialiser le bootstrap Vault
+4. integrer ZAP et Cosign dans la CI
+5. pousser vers Harbor depuis GitHub Actions
+6. deployer les briques monitoring completement en IaC
+7. ajouter des `NetworkPolicy`
+8. deplacer le state Terraform vers un backend distant
 
-Pour pousser cette architecture vers un niveau enterprise, la trajectoire recommandee serait :
+## 15. Conclusion
 
-1. Activer TLS pour Vault, Harbor, AWX et les endpoints d'administration.
-2. Remplacer `NodePort` par un Ingress Controller avec certificats et politiques d'acces.
-3. Ajouter des `NetworkPolicy` entre namespaces.
-4. Basculer le state Terraform vers un backend distant securise.
-5. Automatiser le bootstrap Vault avec une procedure idempotente.
-6. Introduire des environnements distincts et des variables separees par contexte.
-7. Coupler Harbor, Cosign et des politiques d'admission pour controler les images admises dans le cluster.
+Ce projet constitue un bon lab DevSecOps car il relie des sujets souvent traites separement :
 
-## 9. Conclusion
+- IaC
+- gestion des secrets
+- injection runtime
+- registry et integrite d'image
+- scans de securite
+- observabilite
+- automatisation
 
-Le projet met en scene une architecture coherente de plateforme securisee :
-
-- provisionnement par Terraform
-- gestion des secrets par Vault
-- consommation dynamique des secrets par les applications
-- supervision initiale avec Prometheus
-- defense continue via GitHub Actions
-
-La combinaison de ces briques donne une base solide pour un projet de demonstration, de soutenance, de portfolio technique ou de socle d'industrialisation a faire monter en maturite.
+Le support PDF et le contenu du depot convergent bien sur l'objectif principal : demontrer qu'un service central de secrets comme Vault peut devenir l'axe de securisation d'une plateforme Kubernetes pilotee par Terraform et controlee par une CI DevSecOps.
