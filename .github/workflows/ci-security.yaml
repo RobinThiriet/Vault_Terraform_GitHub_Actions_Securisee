@@ -18,7 +18,6 @@ env:
   IMAGE_TO_SCAN05: quay.io/ansible/awx-operator:2.19.1
   IMAGE_TO_SCAN06: quay.io/brancz/kube-rbac-proxy:v0.15.0
   IMAGE_TO_SCAN07: wordpress:apache
-  IMAGE_TO_SCAN08: ubuntu-24.04
 
 jobs:
   terraform:
@@ -211,14 +210,5 @@ jobs:
           ignore-unfixed: true
           scan-type: 'image'
           severity: HIGH,CRITICAL
-
-      - name: Trivy image scan
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: ${{ env.IMAGE_TO_SCAN08 }}
-          format: table
-          exit-code: "0" #1 for vulnerabilities found, 0 for no vulnerabilities found
-          ignore-unfixed: true
-          scan-type: 'image'
-          severity: HIGH,CRITICAL                    
+                   
  
